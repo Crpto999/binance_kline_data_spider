@@ -1,7 +1,7 @@
 import os
 
-main_path = r'E:\Crpto\history_candle_data'
-下载线程数 = 32
+main_path = r'E:\Crpto\Data\history_candle_data'
+下载线程数 = 48
 debug_mode = True  # 调试模式，开启后仅下载前五个交易对，用于调试
 interval = '1m'  # 下载K线的周期,请勿修改此参数，因为要计算avg_price_1m，最终得到的K线数据是1H的
 

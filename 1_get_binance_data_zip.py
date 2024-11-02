@@ -1,3 +1,4 @@
+# 1_get_binance_data_zip.py
 # -*- coding: utf-8 -*-
 import concurrent.futures
 import hashlib
@@ -10,11 +11,16 @@ from tqdm import tqdm
 from config import *
 import random
 from pathlib import Path
+import threading  # 引入threading模块
+from joblib import Parallel, delayed
+
+# 日志锁
+log_lock = threading.Lock()
 
 
 def extract_coin_names(folder_path):
     zip_files = glob(os.path.join(folder_path, '*.zip'))
-    coin_names = set()  # 使用集合来避免重复的币种名称
+    coin_names = set()
     for zip_file in zip_files:
         coin_name = os.path.basename(zip_file).split('-')[0]
         coin_names.add(coin_name)
@@ -107,8 +113,7 @@ def is_url_accessible(btcurl):
 
 
 # 下载URL的函数
-def download_url(url, directory, proxies):
-    max_retries = 10  # 设置最大重试次数
+def download_url(url, directory, proxies, max_retries=10):
     retries = 0
 
     while retries < max_retries:
@@ -126,31 +131,54 @@ def download_url(url, directory, proxies):
             if "Not Found for url" in str(e):  # 检查错误信息是否包含 "Not Found for url"
                 # print(f"{filename.split('.zip')[0]},此时期无K线数据")
                 return -1
-
             else:
                 retries += 1
     return retries
 
 
 # 主下载逻辑
+def download_and_check(url, directory, proxies, max_retries=10):
+    result = download_url(url, directory, proxies, max_retries)
+    filename = url.split('/')[-1]
+    file_path = os.path.join(directory, filename)
+
+    if result == max_retries:
+        return url, 'failed', result  # 下载最终失败
+    elif os.path.exists(file_path) and result <= max_retries:
+        return url, 'success', result  # 下载成功
+    else:
+        return url, 'retry', result  # 下载后续需要重试
+
+
 def main_download(urls, directory, proxies):
+    # 使用 joblib 并行处理
+    results = Parallel(n_jobs=下载线程数)(
+        delayed(download_and_check)(url, directory, proxies) for url in urls
+    )
+
     error_urls = []
-    success_urls = []
     retryed_urls = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=下载线程数) as executor:
-        future_to_url = {executor.submit(download_url, url, directory, proxies): url for url in urls}
-        for future in concurrent.futures.as_completed(future_to_url):
-            url = future_to_url[future]
-            filename = url.split('/')[-1]
-            result = future.result()
-            if result == 10:
-                error_urls.append(f'！！！{filename}最终下载失败！！！,重试{result}次,{url}')
-            elif result > 0:
-                retryed_urls.append(f'{filename}下载成功,重试次数：{result}')
-                success_urls.append(url)
-            elif result == 0:
-                success_urls.append(url)
+    success_urls = []
+
+    for url, status, retries in results:
+        filename = url.split('/')[-1]
+        if status == 'failed':  # 检查是否为下载失败
+            error_urls.append(f'！！！{filename}最终下载失败！！！,重试{retries}次')
+        if retries == -1:
+            error_urls.append(f'！！！{filename}下载失败！！！,不存在此链接')
+        elif status == 'retry':
+            retryed_urls.append(f'{filename}下载成功,重试次数：{retries}')
+        elif status == 'success':
+            success_urls.append(url)
+
     return error_urls, retryed_urls, success_urls
+
+
+def log_failed_urls(log_file, urls):
+    with log_lock:  # 使用锁确保线程安全
+        with open(log_file, 'a', encoding='utf-8') as f:
+            for url in urls:
+                f.write(f'{url}\n')
 
 
 def verify_checksum(zip_file_path, checksum_file_path):
@@ -318,14 +346,10 @@ if __name__ == '__main__':
 
         # 初始化用于跟踪每个币种失败次数的字典
         if len(failed_symbols) > 0:
-            with open(failed_symbols_log, 'a', encoding='utf-8') as f:
-                for i in failed_symbols:
-                    f.write(f'{i}\n')
+            log_failed_urls(failed_symbols_log, failed_symbols)
 
         if len(retryed_symbols) > 0:
-            with open(retryed_symbols_log, 'a', encoding='utf-8') as f:
-                for i in retryed_symbols:
-                    f.write(f'{i}\n')
+            log_failed_urls(retryed_symbols_log, retryed_symbols)
 
         for url in success_symbol_urls:
             filename = url.split('/')[-1]
