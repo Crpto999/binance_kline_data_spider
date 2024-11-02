@@ -138,42 +138,43 @@ def download_url(url, directory, proxies, max_retries=10):
 
 # 主下载逻辑
 def download_and_check(url, directory, proxies, max_retries=10):
-    result = download_url(url, directory, proxies, max_retries)
+    retries = 0
     filename = url.split('/')[-1]
     file_path = os.path.join(directory, filename)
+    while retries < max_retries:
+        try:
+            response = requests.get(url, proxies=proxies, stream=True)
+            response.raise_for_status()
+            with open(file_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            return filename, 'success', retries + 1  # 返回当前的尝试次数
+        except requests.RequestException as e:
+            if "Not Found for url" in str(e):
+                return filename, 'Not_Found', -1
+            else:
+                retries += 1
 
-    if result == max_retries:
-        return url, 'failed', result  # 下载最终失败
-    elif os.path.exists(file_path) and result <= max_retries:
-        return url, 'success', result  # 下载成功
-    else:
-        return url, 'retry', result  # 下载后续需要重试
+    return filename, 'failed', retries  # 返回最终的尝试次数
 
 
 def main_download(urls, directory, proxies):
-    # 使用 joblib 并行处理
     results = Parallel(n_jobs=下载线程数)(
         delayed(download_and_check)(url, directory, proxies) for url in urls
     )
-
     error_urls = []
     retryed_urls = []
     success_urls = []
 
-    for url, status, retries in results:
-        # 这种情况下无需保存日志
-        # if retries == -1:
-            # error_urls.append(f'！！！{filename}下载失败！！不存在此链接，此时期无K线数据')
-
-        filename = url.split('/')[-1]
-        if status == 'failed':  # 检查是否为下载失败
-            error_urls.append(f'！！！{filename}最终下载失败！！重试{retries}次')
-
-        elif status == 'retry' and retries != -1:
-            retryed_urls.append(f'{filename}下载成功,重试次数：{retries}')
+    for filename, status, attempts in results:
+        if status == 'failed':
+            error_urls.append(f'！！！{filename}最终下载失败！！重试{attempts}次')
         elif status == 'success':
-            success_urls.append(url)
-
+            success_urls.append(filename)  # 先添加到成功列表
+            if attempts > 1:  # 再判断是否重试过
+                retryed_urls.append(f'{filename}下载成功,重试次数：{attempts}')
+        elif status == 'Not_Found':
+            pass  # 如果状态为 'Not_Found'，则跳过
     return error_urls, retryed_urls, success_urls
 
 
