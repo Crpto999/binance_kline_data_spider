@@ -161,14 +161,14 @@ def main_download(urls, directory, proxies):
     success_urls = []
 
     for url, status, retries in results:
+        # 这种情况下无需保存日志
+        # if retries == -1:
+            # error_urls.append(f'！！！{filename}下载失败！！不存在此链接，此时期无K线数据')
+
         filename = url.split('/')[-1]
         if status == 'failed':  # 检查是否为下载失败
             error_urls.append(f'！！！{filename}最终下载失败！！重试{retries}次')
-        # if retries == -1:
-        #     pass
-            # print(f"{filename.split('.zip')[0]},此时期无K线数据")
-            # 这种情况下无需保存日志
-            # error_urls.append(f'！！！{filename}下载失败！！不存在此链接')
+
         elif status == 'retry' and retries != -1:
             retryed_urls.append(f'{filename}下载成功,重试次数：{retries}')
         elif status == 'success':

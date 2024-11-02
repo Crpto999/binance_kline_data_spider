@@ -347,6 +347,5 @@ if __name__ == "__main__":
             delete_unmerged_csv_files(download_directory)
             pbar.update(1)
             pbar.set_description(f"💛 {file_num}个{coin} 的{mode}csv️清洗完成，已合并保存")
-            print('')
             time.sleep(1)
     pbar.close()
